@@ -1,0 +1,185 @@
+---
+title: "Validator Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: united
+    orientation: rows
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(stringi)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+
+load("val_dat.RData")
+load("slot_dat.RData")
+load("epoch_dat.RData")
+
+valid <- val_dat %>%
+    mutate(proposed = stri_trans_general(proposed, "latin-ascii")) %>%
+    separate(proposed, into = c("assigned", "executed", "skipped"),sep = "\\|", extra = "merge") %>%
+    mutate(across(c(assigned, executed, skipped, currentBalance, effectiveBalance), parse_number)) %>%
+    mutate(eligibilityEpoch = as.numeric(ifelse(eligibilityEpoch == "genesis", 0, eligibilityEpoch))) %>%
+    mutate(activationEpoch = as.numeric(ifelse(activationEpoch == "genesis", 0, activationEpoch))) %>%
+    mutate(exitEpoch = as.numeric(ifelse(exitEpoch == "--", 11182, exitEpoch))) %>%
+    mutate(withEpoch = as.numeric(ifelse(withEpoch == "--", 11182, withEpoch))) %>%
+    mutate(slashed = ifelse(slashed == "false", FALSE, TRUE))
+
+valid_rank <- valid %>%
+    mutate(active_time = 6.4 / 60 * (exitEpoch - activationEpoch)) %>%
+    mutate(Score1 = (active_time - min(active_time)) / (max(active_time) - min(active_time)),
+           Score2 = (executed - min(executed)) / (max(executed) - min(executed))) %>%
+    mutate(Tier = ifelse(executed == assigned & assigned > 0 & !slashed, 1,
+                         ifelse(executed / assigned >= .75 & assigned > 0 & !slashed, 2,
+                                ifelse((assigned == 0 | executed / assigned >= .5) & !slashed, 3, 
+                                       ifelse(executed / assigned < .5 & !slashed, 4, 5))))) %>%
+    group_by(Tier) %>%
+    mutate(Score = (Score1 + Score2) / 2,
+           Rank = rank(-Score, ties.method = "min")) %>%
+    ungroup() %>%
+    arrange(Tier, Rank) %>%
+    select(`Public Key` = publickey, `Successful Blocks` = executed, `Skipped Blocks` = skipped, `Time Active` = active_time, `Slashed` = slashed, Tier, Score, Rank)
+
+summary_table <- valid_rank %>% 
+  group_by(Tier) %>% 
+  add_count(Tier) %>%
+  summarise(across(c(n, `Time Active`, `Successful Blocks`, `Skipped Blocks`, `Slashed`), mean)) %>%
+  mutate(Slashed = Slashed*100) %>%
+  rename(Count = n, `Percentage Slashed` = Slashed)
+
+```
+
+Statistics
+=====================================  
+
+
+Row {data-height=200}
+-----------------------------------------------------------------------
+
+### Number of Validators
+
+```{r}
+valueBox(nrow(valid), icon = "fa-users")
+```
+
+
+### Number of Slots
+
+```{r}
+valueBox(valid %>% summarise(n = sum(executed)), icon = "fa-th-large")
+```
+
+### Number of Skipped Slots
+
+```{r}
+valueBox(valid %>% summarise(n = sum(skipped)) %>% pull(n), icon = "fa-globe") 
+```
+
+### Validators with Skipped Slots
+
+```{r}
+valueBox(valid %>% filter(skipped > 0) %>% nrow(), icon = "fa-user-cog") 
+```
+
+Row {data-height=200}
+-----------------------------------------------------------------------
+
+### Number of Epochs
+
+```{r}
+valueBox(nrow(epoch_dat), icon = "fa-cube")
+```
+
+### Number of Slashings
+
+```{r}
+valueBox(nrow(valid %>% filter(slashed)), icon = "fa-times") 
+```
+
+### Percentage of Perfect Validators
+
+```{r}
+valueBox(scales::percent((valid %>% filter(assigned > 0, assigned == executed) %>% nrow) / nrow(valid), accuracy = .1), icon = "fa-user", color = "green")
+```
+
+### Percentage of Slashed Validators
+
+```{r}
+valueBox(scales::percent((valid %>% filter(slashed) %>% nrow) / nrow(valid), accuracy = .01), icon = "fa-times-circle",
+         color = "red")
+```
+
+Row {data-height=400}
+-----------------------------------------------------------------------
+
+### Tier Distribution
+
+```{r, fig.width=12}
+valid_summary <- valid_rank %>%
+    mutate(Score = ((1 / Tier) * 5 + Score) / 6) %>%
+    mutate(Tier = factor(Tier)) %>%
+    group_by(Tier) %>%
+    summarise(HighScore = max(Score)) %>%
+    mutate(HighScore = ifelse(Tier == 1, Inf, HighScore)) %>%
+    ungroup() %>%
+    mutate(LowScore = c(tail(HighScore, 4), -Inf))
+
+valid_rank %>% 
+  mutate(Score = ((1 / Tier) * 5 + Score) / 6) %>%
+  arrange(Score) %>% 
+  mutate(Index = 1:nrow(.)) %>%
+  ggplot(aes(x = Index, y = Score)) +
+    geom_point() +
+    geom_rect(data=valid_summary, inherit.aes = FALSE,
+          aes(xmin = -Inf, xmax = Inf, ymin = LowScore, ymax = HighScore, fill = factor(Tier)), alpha = 0.2) +
+    scale_fill_manual("Tier", values = rev(rainbow(5))) +
+    scale_x_continuous(labels = scales::comma, breaks = scales::pretty_breaks(n = 10)) +
+    scale_y_continuous(labels = scales::comma, breaks = scales::pretty_breaks(n = 10)) +
+    labs(
+        title = "Sorted Validator Scores",
+        subtitle = "With tier-cutoffs illustrated"
+    )
+```
+
+### Score Distribution
+
+```{r, fig.width=12}
+ggplot(valid_rank %>% mutate(Score = ((1 / Tier) * 5 + Score) / 6), aes(x = Score, fill = factor(Tier))) +
+    geom_histogram(color = "grey60") +
+    scale_x_continuous(labels = scales::comma) +
+    scale_fill_manual("Tier", values = rev(rainbow(5)))+
+labs(
+        title = "Distribution of Validator Performance Scores Partitioned by Tier"
+    )+ facet_wrap(vars(Tier), scales = "free_y")
+```
+
+Row {data-height=400}
+-----------------------------------------------------------------------
+
+### Tier Summary
+
+```{r}
+summary_table %>%
+  kable() %>%
+  kable_styling() %>%
+  row_spec(1, bold = TRUE, background = "#E8C4EF") %>%
+  row_spec(2, bold = TRUE, background = "#BACAE9") %>%
+  row_spec(3, bold = TRUE, background = "#C0EFD1") %>%
+  row_spec(4, bold = TRUE, background = "#E3EFC2") %>%
+  row_spec(5, bold = TRUE, background = "#F7C3C4")
+```
+
+Data
+=====================================  
+
+Row {data-height=450}
+-----------------------------------------------------------------------
+```{r}
+DT::datatable(valid_rank %>% mutate(across(is.numeric, round, digits = 4)), style = "bootstrap", options = list(
+  pageLength = 20
+))
+```
+
+
