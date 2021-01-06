@@ -2,8 +2,8 @@
 
 ![A mockup UI](images/mockup-ui.png)
 
-Our grant proposal seeks to improve on our bronze place, award winning research into tracking the health of the Ethereum 2.0 mainnet through the analysis of validator behavior. By setting our previous work as the foundation, this set of new phases will formalize our methodology, improve its accessibility through the development of a visualization dashboard, and encourage community ownership by open sourcing the techniques and code. We believe our contributions will help aid potential validators understand how the network rewards positive behaviors, will give network stewards a way to attain a high level view of the health of the blockchain, and also serve as the initial ground work for more complex performance tracking tools. All funding for this grant will be used to help us push forward through our roadmap.
-
+Our grant proposal seeks to improve on our bronze place, award winning research into tracking the health of the Ethereum 2.0 mainnet through the analysis of validator behavior. By setting our previous work as the foundation, this set of new phases will formalize our methodology, improve its accessibility through the development of a visualization dashboard, and encourage community ownership by open sourcing the techniques and code. We believe our contributions will help aid potential validators understand how the network rewards positive behaviors, will give network stewards a way to attain a high level view of the health of the blockchain, and also serve as the initial ground work for more complex performance tracking tools. The current development version of the dashboard can be viewed [here](https://crypto.omnianalytics.io/eth2-tier-dashboard/). All funding for this grant will be used to help us push forward through our roadmap.
+       
 Phase 0:
 
 1. Release our current dashboard script and dataset.
